@@ -70,7 +70,7 @@ pub use crate::advice::{Advice, UncheckedAdvice};
 use std::fmt;
 #[cfg(not(any(unix, windows)))]
 use std::fs::File;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind};
 use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -244,7 +244,7 @@ impl MmapOptions {
         self
     }
 
-    fn validate_len(len: u64) -> Result<usize> {
+    fn validate_len(len: u64) -> std::io::Result<usize> {
         // Rust's slice cannot be larger than isize::MAX.
         // See https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html
         //
@@ -262,7 +262,7 @@ impl MmapOptions {
     }
 
     /// Returns the configured length, or the length of the provided file.
-    fn get_len<T: MmapAsRawDesc>(&self, file: &T) -> Result<usize> {
+    fn get_len<T: MmapAsRawDesc>(&self, file: &T) -> std::io::Result<usize> {
         let len = if let Some(len) = self.len {
             len as u64
         } else {
@@ -426,7 +426,7 @@ impl MmapOptions {
     /// # Ok(())
     /// # }
     /// ```
-    pub unsafe fn map<T: MmapAsRawDesc>(&self, file: T) -> Result<Mmap> {
+    pub unsafe fn map<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<Mmap> {
         let desc = file.as_raw_desc();
 
         MmapInner::map(
@@ -451,7 +451,7 @@ impl MmapOptions {
     /// variety of reasons, such as when the file is not open with read permissions.
     ///
     /// Returns [`ErrorKind::Unsupported`] on unsupported platforms.
-    pub unsafe fn map_exec<T: MmapAsRawDesc>(&self, file: T) -> Result<Mmap> {
+    pub unsafe fn map_exec<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<Mmap> {
         let desc = file.as_raw_desc();
 
         MmapInner::map_exec(
@@ -500,7 +500,7 @@ impl MmapOptions {
     /// # Ok(())
     /// # }
     /// ```
-    pub unsafe fn map_mut<T: MmapAsRawDesc>(&self, file: T) -> Result<MmapMut> {
+    pub unsafe fn map_mut<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<MmapMut> {
         let desc = file.as_raw_desc();
 
         MmapInner::map_mut(
@@ -543,7 +543,7 @@ impl MmapOptions {
     /// # Ok(())
     /// # }
     /// ```
-    pub unsafe fn map_copy<T: MmapAsRawDesc>(&self, file: T) -> Result<MmapMut> {
+    pub unsafe fn map_copy<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<MmapMut> {
         let desc = file.as_raw_desc();
 
         MmapInner::map_copy(
@@ -590,7 +590,7 @@ impl MmapOptions {
     /// # Ok(())
     /// # }
     /// ```
-    pub unsafe fn map_copy_read_only<T: MmapAsRawDesc>(&self, file: T) -> Result<Mmap> {
+    pub unsafe fn map_copy_read_only<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<Mmap> {
         let desc = file.as_raw_desc();
 
         MmapInner::map_copy_read_only(
@@ -621,7 +621,7 @@ impl MmapOptions {
     /// - A file with fs-verity enabled (Linux and Android only).
     ///
     /// [`map()`]: MmapOptions::map()
-    pub fn map_if_safe<T: MmapAsRawDesc>(&self, file: T) -> Result<Option<Mmap>> {
+    pub fn map_if_safe<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<Option<Mmap>> {
         let desc = file.as_raw_desc();
         let len = self.get_len(&file)?;
         if !MmapInner::check_safe_to_map(desc.0, self.offset, len)? {
@@ -649,7 +649,7 @@ impl MmapOptions {
     /// when `len > isize::MAX`.
     ///
     /// Returns [`ErrorKind::Unsupported`] on unsupported platforms.
-    pub fn map_anon(&self) -> Result<MmapMut> {
+    pub fn map_anon(&self) -> std::io::Result<MmapMut> {
         let len = self.len.unwrap_or(0);
 
         // See get_len() for details.
@@ -673,7 +673,7 @@ impl MmapOptions {
     /// variety of reasons, such as when the file is not open with read and write permissions.
     ///
     /// Returns [`ErrorKind::Unsupported`] on unsupported platforms.
-    pub fn map_raw<T: MmapAsRawDesc>(&self, file: T) -> Result<MmapRaw> {
+    pub fn map_raw<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<MmapRaw> {
         let desc = file.as_raw_desc();
 
         MmapInner::map_mut(
@@ -696,7 +696,7 @@ impl MmapOptions {
     /// This method returns an error when the underlying system call fails.
     ///
     /// Returns [`ErrorKind::Unsupported`] on unsupported platforms.
-    pub fn map_raw_read_only<T: MmapAsRawDesc>(&self, file: T) -> Result<MmapRaw> {
+    pub fn map_raw_read_only<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<MmapRaw> {
         let desc = file.as_raw_desc();
 
         MmapInner::map(
@@ -793,7 +793,7 @@ impl Mmap {
     /// # Ok(())
     /// # }
     /// ```
-    pub unsafe fn map<T: MmapAsRawDesc>(file: T) -> Result<Mmap> {
+    pub unsafe fn map<T: MmapAsRawDesc>(file: T) -> std::io::Result<Mmap> {
         // SAFETY: safety requirements forwarded to caller.
         unsafe { MmapOptions::new().map(file) }
     }
@@ -803,7 +803,7 @@ impl Mmap {
     ///
     /// This is equivalent to calling `MmapOptions::new().map_if_safe(file)`.
     /// See [`MmapOptions::map_if_safe()`] for details.
-    pub fn map_if_safe<T: MmapAsRawDesc>(file: T) -> Result<Option<Mmap>> {
+    pub fn map_if_safe<T: MmapAsRawDesc>(file: T) -> std::io::Result<Option<Mmap>> {
         MmapOptions::new().map_if_safe(file)
     }
 
@@ -842,7 +842,7 @@ impl Mmap {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn make_mut(mut self) -> Result<MmapMut> {
+    pub fn make_mut(mut self) -> std::io::Result<MmapMut> {
         self.inner.make_mut()?;
         Ok(MmapMut { inner: self.inner })
     }
@@ -853,7 +853,7 @@ impl Mmap {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub fn advise(&self, advice: Advice) -> Result<()> {
+    pub fn advise(&self, advice: Advice) -> std::io::Result<()> {
         // SAFETY: The `Advice` enum only allows safe advice values.
         unsafe {
             self.inner
@@ -872,7 +872,7 @@ impl Mmap {
     /// Care must be taken not to break the soundness rules of the Rust compiler.
     /// Refer to the operating system documentation to see what each of the [`UncheckedAdvice`] variant does.
     #[cfg(unix)]
-    pub unsafe fn unchecked_advise(&self, advice: UncheckedAdvice) -> Result<()> {
+    pub unsafe fn unchecked_advise(&self, advice: UncheckedAdvice) -> std::io::Result<()> {
         // SAFETY: safety requirements forwarded to caller.
         unsafe {
             self.inner
@@ -888,7 +888,7 @@ impl Mmap {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub fn advise_range(&self, advice: Advice, offset: usize, len: usize) -> Result<()> {
+    pub fn advise_range(&self, advice: Advice, offset: usize, len: usize) -> std::io::Result<()> {
         // SAFETY: The `Advice` enum only allows safe advice values.
         unsafe { self.inner.advise(advice as libc::c_int, offset, len) }
     }
@@ -911,7 +911,7 @@ impl Mmap {
         advice: UncheckedAdvice,
         offset: usize,
         len: usize,
-    ) -> Result<()> {
+    ) -> std::io::Result<()> {
         // SAFETY: safety requirements forwarded to caller.
         unsafe { self.inner.advise(advice as libc::c_int, offset, len) }
     }
@@ -920,7 +920,7 @@ impl Mmap {
     ///
     /// See [mlock()](https://man7.org/linux/man-pages/man2/mlock.2.html) map page.
     #[cfg(unix)]
-    pub fn lock(&self) -> Result<()> {
+    pub fn lock(&self) -> std::io::Result<()> {
         self.inner.lock()
     }
 
@@ -928,7 +928,7 @@ impl Mmap {
     ///
     /// See [munlock()](https://man7.org/linux/man-pages/man2/munlock.2.html) map page.
     #[cfg(unix)]
-    pub fn unlock(&self) -> Result<()> {
+    pub fn unlock(&self) -> std::io::Result<()> {
         self.inner.unlock()
     }
 
@@ -950,7 +950,7 @@ impl Mmap {
     ///
     /// [`mremap(2)`]: https://man7.org/linux/man-pages/man2/mremap.2.html
     #[cfg(target_os = "linux")]
-    pub unsafe fn remap(&mut self, new_len: usize, options: RemapOptions) -> Result<()> {
+    pub unsafe fn remap(&mut self, new_len: usize, options: RemapOptions) -> std::io::Result<()> {
         self.inner.remap(new_len, options)
     }
 }
@@ -1005,7 +1005,7 @@ impl MmapRaw {
     /// variety of reasons, such as when the file is not open with read and write permissions.
     ///
     /// Returns [`ErrorKind::Unsupported`] on unsupported platforms.
-    pub fn map_raw<T: MmapAsRawDesc>(file: T) -> Result<MmapRaw> {
+    pub fn map_raw<T: MmapAsRawDesc>(file: T) -> std::io::Result<MmapRaw> {
         MmapOptions::new().map_raw(file)
     }
 
@@ -1070,7 +1070,7 @@ impl MmapRaw {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn flush(&self) -> Result<()> {
+    pub fn flush(&self) -> std::io::Result<()> {
         let len = self.len();
         self.inner.flush(0, len)
     }
@@ -1080,7 +1080,7 @@ impl MmapRaw {
     /// This method initiates flushing modified pages to durable storage, but it will not wait for
     /// the operation to complete before returning. The file's metadata (including last
     /// modification timestamp) may not be updated.
-    pub fn flush_async(&self) -> Result<()> {
+    pub fn flush_async(&self) -> std::io::Result<()> {
         let len = self.len();
         self.inner.flush_async(0, len)
     }
@@ -1094,7 +1094,7 @@ impl MmapRaw {
     /// last modification timestamp) may not be updated. It is not guaranteed the only the changes
     /// in the specified range are flushed; other outstanding changes to the memory map may be
     /// flushed as well.
-    pub fn flush_range(&self, offset: usize, len: usize) -> Result<()> {
+    pub fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
         self.inner.flush(offset, len)
     }
 
@@ -1107,7 +1107,7 @@ impl MmapRaw {
     /// modification timestamp) may not be updated. It is not guaranteed that the only changes
     /// flushed are those in the specified range; other outstanding changes to the memory map may
     /// be flushed as well.
-    pub fn flush_async_range(&self, offset: usize, len: usize) -> Result<()> {
+    pub fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
         self.inner.flush_async(offset, len)
     }
 
@@ -1117,7 +1117,7 @@ impl MmapRaw {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub fn advise(&self, advice: Advice) -> Result<()> {
+    pub fn advise(&self, advice: Advice) -> std::io::Result<()> {
         // SAFETY: The `Advice` enum only allows safe advice values.
         unsafe {
             self.inner
@@ -1136,7 +1136,7 @@ impl MmapRaw {
     /// Care must be taken not to break the soundness rules of the Rust compiler.
     /// Refer to the operating system documentation to see what each of the [`UncheckedAdvice`] variant does.
     #[cfg(unix)]
-    pub unsafe fn unchecked_advise(&self, advice: UncheckedAdvice) -> Result<()> {
+    pub unsafe fn unchecked_advise(&self, advice: UncheckedAdvice) -> std::io::Result<()> {
         // SAFETY: safety requirements forwarded to caller.
         unsafe {
             self.inner
@@ -1152,7 +1152,7 @@ impl MmapRaw {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub fn advise_range(&self, advice: Advice, offset: usize, len: usize) -> Result<()> {
+    pub fn advise_range(&self, advice: Advice, offset: usize, len: usize) -> std::io::Result<()> {
         // SAFETY: The `Advice` enum only allows safe advice values.
         unsafe { self.inner.advise(advice as libc::c_int, offset, len) }
     }
@@ -1175,7 +1175,7 @@ impl MmapRaw {
         advice: UncheckedAdvice,
         offset: usize,
         len: usize,
-    ) -> Result<()> {
+    ) -> std::io::Result<()> {
         // SAFETY: safety requirements forwarded to caller.
         unsafe { self.inner.advise(advice as libc::c_int, offset, len) }
     }
@@ -1184,7 +1184,7 @@ impl MmapRaw {
     ///
     /// See [mlock()](https://man7.org/linux/man-pages/man2/mlock.2.html) map page.
     #[cfg(unix)]
-    pub fn lock(&self) -> Result<()> {
+    pub fn lock(&self) -> std::io::Result<()> {
         self.inner.lock()
     }
 
@@ -1192,7 +1192,7 @@ impl MmapRaw {
     ///
     /// See [munlock()](https://man7.org/linux/man-pages/man2/munlock.2.html) map page.
     #[cfg(unix)]
-    pub fn unlock(&self) -> Result<()> {
+    pub fn unlock(&self) -> std::io::Result<()> {
         self.inner.unlock()
     }
 
@@ -1214,7 +1214,7 @@ impl MmapRaw {
     ///
     /// [`mremap(2)`]: https://man7.org/linux/man-pages/man2/mremap.2.html
     #[cfg(target_os = "linux")]
-    pub unsafe fn remap(&mut self, new_len: usize, options: RemapOptions) -> Result<()> {
+    pub unsafe fn remap(&mut self, new_len: usize, options: RemapOptions) -> std::io::Result<()> {
         self.inner.remap(new_len, options)
     }
 }
@@ -1313,7 +1313,7 @@ impl MmapMut {
     /// # Ok(())
     /// # }
     /// ```
-    pub unsafe fn map_mut<T: MmapAsRawDesc>(file: T) -> Result<MmapMut> {
+    pub unsafe fn map_mut<T: MmapAsRawDesc>(file: T) -> std::io::Result<MmapMut> {
         // SAFETY: safety requirements forwarded to caller.
         unsafe { MmapOptions::new().map_mut(file) }
     }
@@ -1328,7 +1328,7 @@ impl MmapMut {
     /// when `len > isize::MAX`.
     ///
     /// Returns [`ErrorKind::Unsupported`] on unsupported platforms.
-    pub fn map_anon(length: usize) -> Result<MmapMut> {
+    pub fn map_anon(length: usize) -> std::io::Result<MmapMut> {
         MmapOptions::new().len(length).map_anon()
     }
 
@@ -1361,7 +1361,7 @@ impl MmapMut {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn flush(&self) -> Result<()> {
+    pub fn flush(&self) -> std::io::Result<()> {
         let len = self.len();
         self.inner.flush(0, len)
     }
@@ -1371,7 +1371,7 @@ impl MmapMut {
     /// This method initiates flushing modified pages to durable storage, but it will not wait for
     /// the operation to complete before returning. The file's metadata (including last
     /// modification timestamp) may not be updated.
-    pub fn flush_async(&self) -> Result<()> {
+    pub fn flush_async(&self) -> std::io::Result<()> {
         let len = self.len();
         self.inner.flush_async(0, len)
     }
@@ -1385,7 +1385,7 @@ impl MmapMut {
     /// last modification timestamp) may not be updated. It is not guaranteed the only the changes
     /// in the specified range are flushed; other outstanding changes to the memory map may be
     /// flushed as well.
-    pub fn flush_range(&self, offset: usize, len: usize) -> Result<()> {
+    pub fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
         self.inner.flush(offset, len)
     }
 
@@ -1398,7 +1398,7 @@ impl MmapMut {
     /// modification timestamp) may not be updated. It is not guaranteed that the only changes
     /// flushed are those in the specified range; other outstanding changes to the memory map may
     /// be flushed as well.
-    pub fn flush_async_range(&self, offset: usize, len: usize) -> Result<()> {
+    pub fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
         self.inner.flush_async(offset, len)
     }
 
@@ -1428,7 +1428,7 @@ impl MmapMut {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn make_read_only(mut self) -> Result<Mmap> {
+    pub fn make_read_only(mut self) -> std::io::Result<Mmap> {
         self.inner.make_read_only()?;
         Ok(Mmap { inner: self.inner })
     }
@@ -1447,7 +1447,7 @@ impl MmapMut {
     ///
     /// This method returns an error when the underlying system call fails, which can happen for a
     /// variety of reasons, such as when the file has not been opened with execute permissions.
-    pub fn make_exec(mut self) -> Result<Mmap> {
+    pub fn make_exec(mut self) -> std::io::Result<Mmap> {
         self.inner.make_exec()?;
         Ok(Mmap { inner: self.inner })
     }
@@ -1458,7 +1458,7 @@ impl MmapMut {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub fn advise(&self, advice: Advice) -> Result<()> {
+    pub fn advise(&self, advice: Advice) -> std::io::Result<()> {
         // SAFETY: The `Advice` enum only allows safe advice values.
         unsafe {
             self.inner
@@ -1472,7 +1472,7 @@ impl MmapMut {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub unsafe fn unchecked_advise(&self, advice: UncheckedAdvice) -> Result<()> {
+    pub unsafe fn unchecked_advise(&self, advice: UncheckedAdvice) -> std::io::Result<()> {
         // SAFETY: Safety requirements pushed to caller.
         unsafe {
             self.inner
@@ -1488,7 +1488,7 @@ impl MmapMut {
     ///
     /// See [madvise()](https://man7.org/linux/man-pages/man2/madvise.2.html) map page.
     #[cfg(unix)]
-    pub fn advise_range(&self, advice: Advice, offset: usize, len: usize) -> Result<()> {
+    pub fn advise_range(&self, advice: Advice, offset: usize, len: usize) -> std::io::Result<()> {
         // SAFETY: The `Advice` enum only allows safe advice values.
         unsafe { self.inner.advise(advice as libc::c_int, offset, len) }
     }
@@ -1506,7 +1506,7 @@ impl MmapMut {
         advice: UncheckedAdvice,
         offset: usize,
         len: usize,
-    ) -> Result<()> {
+    ) -> std::io::Result<()> {
         // SAFETY: Safety requirements pushed to caller.
         unsafe { self.inner.advise(advice as libc::c_int, offset, len) }
     }
@@ -1515,7 +1515,7 @@ impl MmapMut {
     ///
     /// See [mlock()](https://man7.org/linux/man-pages/man2/mlock.2.html) map page.
     #[cfg(unix)]
-    pub fn lock(&self) -> Result<()> {
+    pub fn lock(&self) -> std::io::Result<()> {
         self.inner.lock()
     }
 
@@ -1523,7 +1523,7 @@ impl MmapMut {
     ///
     /// See [munlock()](https://man7.org/linux/man-pages/man2/munlock.2.html) map page.
     #[cfg(unix)]
-    pub fn unlock(&self) -> Result<()> {
+    pub fn unlock(&self) -> std::io::Result<()> {
         self.inner.unlock()
     }
 
@@ -1545,7 +1545,7 @@ impl MmapMut {
     ///
     /// [`mremap(2)`]: https://man7.org/linux/man-pages/man2/mremap.2.html
     #[cfg(target_os = "linux")]
-    pub unsafe fn remap(&mut self, new_len: usize, options: RemapOptions) -> Result<()> {
+    pub unsafe fn remap(&mut self, new_len: usize, options: RemapOptions) -> std::io::Result<()> {
         self.inner.remap(new_len, options)
     }
 }
