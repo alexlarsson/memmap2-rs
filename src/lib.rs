@@ -132,6 +132,93 @@ where
     }
 }
 
+/// Error returned by [`MmapOptions::map_if_safe()`].
+///
+/// Allows you to distinguish between three failure modes:
+///
+/// * Safe mapping is not supported on this platform.
+/// * Trying to map an unsafe file descriptor.
+/// * The map attempt itself failed.
+///
+/// The error is convertible to [`std::io::Error`].
+pub struct MapIfSafeError {
+    inner: MapIfSafeErrorInner,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)] // Not all variants are constructed on all platforms.
+enum MapIfSafeErrorInner {
+    NotSupported,
+    NotSafe(std::io::Error),
+    MapFailed(std::io::Error),
+}
+
+impl MapIfSafeError {
+    #[allow(dead_code)] // Not all variants are constructed on all platforms.
+    fn new_not_supported() -> Self {
+        let inner = MapIfSafeErrorInner::NotSupported;
+        Self { inner }
+    }
+
+    #[allow(dead_code)] // Not all variants are constructed on all platforms.
+    fn new_not_safe(reason: std::io::Error) -> Self {
+        let inner = MapIfSafeErrorInner::NotSafe(reason);
+        Self { inner }
+    }
+
+    #[allow(dead_code)] // Not all variants are constructed on all platforms.
+    fn new_map_failed(reason: std::io::Error) -> Self {
+        let inner = MapIfSafeErrorInner::MapFailed(reason);
+        Self { inner }
+    }
+
+    /// Indicates that safe mapping is not supported at all on this platform.
+    pub fn not_supported(&self) -> bool {
+        matches!(self.inner, MapIfSafeErrorInner::NotSupported)
+    }
+
+    /// Indicates if the map was refused because mapping the file descriptor is not safe.
+    pub fn not_safe(&self) -> bool {
+        matches!(self.inner, MapIfSafeErrorInner::NotSafe(_))
+    }
+
+    /// Indicates if the file descriptor to be mapped was considered safe, but the mapping itself failed.
+    pub fn map_failed(&self) -> bool {
+        matches!(self.inner, MapIfSafeErrorInner::MapFailed(_))
+    }
+}
+
+impl std::error::Error for MapIfSafeError {}
+
+impl fmt::Display for MapIfSafeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[allow(clippy::match_same_arms)]
+        match &self.inner {
+            MapIfSafeErrorInner::NotSupported => {
+                fmt::Display::fmt(&Error::from(ErrorKind::Unsupported), f)
+            }
+            MapIfSafeErrorInner::NotSafe(e) => fmt::Display::fmt(e, f),
+            MapIfSafeErrorInner::MapFailed(e) => fmt::Display::fmt(e, f),
+        }
+    }
+}
+
+impl fmt::Debug for MapIfSafeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+impl From<MapIfSafeError> for std::io::Error {
+    fn from(value: MapIfSafeError) -> Self {
+        match value.inner {
+            MapIfSafeErrorInner::NotSupported => std::io::ErrorKind::Unsupported.into(),
+            MapIfSafeErrorInner::NotSafe(e) => e,
+            MapIfSafeErrorInner::MapFailed(e) => e,
+        }
+    }
+}
+
 /// A memory map builder, providing advanced options and flags for specifying memory map behavior.
 ///
 /// `MmapOptions` can be used to create an anonymous memory map using [`map_anon()`], or a
@@ -621,12 +708,12 @@ impl MmapOptions {
     /// - A file with fs-verity enabled (Linux and Android only).
     ///
     /// [`map()`]: MmapOptions::map()
-    pub fn map_if_safe<T: MmapAsRawDesc>(&self, file: T) -> std::io::Result<Option<Mmap>> {
+    pub fn map_if_safe<T: MmapAsRawDesc>(&self, file: T) -> Result<Mmap, MapIfSafeError> {
         let desc = file.as_raw_desc();
-        let len = self.get_len(&file)?;
-        if !MmapInner::check_safe_to_map(desc.0, self.offset, len)? {
-            return Ok(None);
-        }
+        let len = self
+            .get_len(&file)
+            .map_err(MapIfSafeError::new_map_failed)?;
+        MmapInner::check_safe_to_map(desc.0, self.offset, len)?;
         MmapInner::map(
             len,
             desc.0,
@@ -634,7 +721,8 @@ impl MmapOptions {
             self.populate,
             self.no_reserve_swap,
         )
-        .map(|inner| Some(Mmap { inner }))
+        .map_err(MapIfSafeError::new_map_failed)
+        .map(|inner| Mmap { inner })
     }
 
     /// Creates an anonymous memory map.
@@ -803,7 +891,7 @@ impl Mmap {
     ///
     /// This is equivalent to calling `MmapOptions::new().map_if_safe(file)`.
     /// See [`MmapOptions::map_if_safe()`] for details.
-    pub fn map_if_safe<T: MmapAsRawDesc>(file: T) -> std::io::Result<Option<Mmap>> {
+    pub fn map_if_safe<T: MmapAsRawDesc>(file: T) -> Result<Mmap, MapIfSafeError> {
         MmapOptions::new().map_if_safe(file)
     }
 
@@ -2377,16 +2465,16 @@ mod test {
 
         file.write_all(b"Hello, world!").unwrap();
 
-        // Should return None without seals
-        assert!(Mmap::map_if_safe(&file).unwrap().is_none());
+        // Should report not-safe without seals.
+        assert!(Mmap::map_if_safe(&file).unwrap_err().not_safe());
 
-        // Should return None with only F_SEAL_SHRINK
+        // Should report not-safe with only F_SEAL_SHRINK
         unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, libc::F_SEAL_SHRINK) };
-        assert!(Mmap::map_if_safe(&file).unwrap().is_none());
+        assert!(Mmap::map_if_safe(&file).unwrap_err().not_safe());
 
         // Should succeed with both seals
         unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, libc::F_SEAL_WRITE) };
-        let mmap = Mmap::map_if_safe(&file).unwrap().unwrap();
+        let mmap = Mmap::map_if_safe(&file).unwrap();
         assert_eq!(&mmap[..], b"Hello, world!");
     }
 
@@ -2412,20 +2500,16 @@ mod test {
         let seals = libc::F_SEAL_SHRINK | libc::F_SEAL_WRITE;
         unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, seals) };
 
-        let mmap = MmapOptions::new()
-            .offset(7)
-            .map_if_safe(&file)
-            .unwrap()
-            .unwrap();
+        let mmap = MmapOptions::new().offset(7).map_if_safe(&file).unwrap();
         assert_eq!(&mmap[..], b"world!");
 
-        // Mapping beyond file size should return None
+        // Mapping beyond file size should report not-safe
         assert!(MmapOptions::new()
             .offset(7)
             .len(100)
             .map_if_safe(&file)
-            .unwrap()
-            .is_none());
+            .unwrap_err()
+            .not_safe());
     }
 
     #[test]
@@ -2443,7 +2527,7 @@ mod test {
             .unwrap();
         file.set_len(128).unwrap();
 
-        assert!(Mmap::map_if_safe(&file).unwrap().is_none());
+        assert!(Mmap::map_if_safe(&file).unwrap_err().not_safe());
     }
 
     #[test]
@@ -2500,7 +2584,7 @@ mod test {
             return;
         }
 
-        let mmap = Mmap::map_if_safe(&file).unwrap().unwrap();
+        let mmap = Mmap::map_if_safe(&file).unwrap();
         assert_eq!(&mmap[..], b"Hello, verity!");
     }
 
